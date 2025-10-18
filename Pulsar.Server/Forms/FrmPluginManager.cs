@@ -332,7 +332,7 @@ namespace Pulsar.Server.Forms
             {
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "https://t.me/pulsarplugins",
+                    FileName = "https://t.me/PulsarPlugin",
                     UseShellExecute = true
                 };
                 System.Diagnostics.Process.Start(psi);
