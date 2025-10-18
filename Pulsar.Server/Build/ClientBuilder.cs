@@ -77,8 +77,6 @@ namespace Pulsar.Server.Build
 
                 File.WriteAllBytes(_options.OutputPath, buffer);
 
-                return false;
-
             }
 
             // PHASE 4 - Assembly Information changing
