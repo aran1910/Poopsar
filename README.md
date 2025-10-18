@@ -171,6 +171,7 @@ Pulsar is licensed under the **[MIT](LICENSE)**. Third-party licenses are availa
 - **[Poli](https://github.com/paulmaster59/)** - Discord Server & Custom Pulsar Crypter
 - **[Deadman](https://github.com/DeadmanLabs)** - Memory Dumping and Shellcode Builder
 - **[User76](https://github.com/user76-real)** - Networking Optimizations
+- **[TOXI](https://github.com/onlytoxi)** - Entire Plugin System and other improvements
 
 ---
 
