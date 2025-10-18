@@ -1,13 +1,13 @@
 using System;
 
-namespace Pulsar.Client.Plugins
+namespace Pulsar.Common.Plugins
 {
     public interface IUniversalPlugin
     {
         string PluginId { get; }
         string Version { get; }
         string[] SupportedCommands { get; }
-        
+
         void Initialize(byte[] initData);
         PluginResult ExecuteCommand(string command, byte[] parameters);
         void Cleanup();

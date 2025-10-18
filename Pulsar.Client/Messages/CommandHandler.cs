@@ -4,6 +4,7 @@ using Pulsar.Common.Messages;
 using Pulsar.Common.Messages.Other;
 using Pulsar.Common.Networking;
 using Pulsar.Client.Plugins;
+using Pulsar.Common.Plugins;
 
 namespace Pulsar.Client.Messages
 {

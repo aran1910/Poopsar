@@ -1,10 +1,11 @@
+using Pulsar.Common.Plugins;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-namespace Pulsar.Client.Plugins
+namespace Pulsar.Common.Plugins
 {
     public static class UniversalPluginDispatcher
     {
