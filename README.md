@@ -86,7 +86,6 @@ Join our [Telegram channel](https://t.me/novashadowisgay) for updates, discussio
 ## 📥 Download
 
 - **[Latest Stable Release](https://github.com/Quasar-Continuation/Poopsar/releases)**
-<!-- - **[Latest Development Snapshot](https://ci.appveyor.com/project/MaxXor/pulsar)** -->
 
 ---
 

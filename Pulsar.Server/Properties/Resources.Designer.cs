@@ -483,7 +483,7 @@ namespace Pulsar.Server.Properties {
         /// <summary>
         ///   Looks up a localized string similar to MIT License
         ///
-        ///Copyright (c) 2023 MaxXor
+        ///Copyright (c) 2025 PulsarTeam
         ///
         ///Permission is hereby granted, free of charge, to any person obtaining a copy
         ///of this software and associated documentation files (the &quot;Software&quot;), to deal

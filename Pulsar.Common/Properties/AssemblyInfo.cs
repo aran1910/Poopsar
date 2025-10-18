@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("Pulsar")]
-[assembly: AssemblyCopyright("Copyright © MaxXor 2023")]
+[assembly: AssemblyCopyright("Copyright © PulsarTeam 2025")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 [assembly: InternalsVisibleTo("Pulsar.Common.Tests")]
