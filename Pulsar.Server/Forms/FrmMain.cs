@@ -1636,8 +1636,8 @@ namespace Pulsar.Server.Forms
                         SortClientsByFavoriteStatus();
                         lstClients.EndUpdate();
                     }
-                    //lvi.UseItemStyleForSubItems = false;
-                    //lvi.SubItems[4].ForeColor = Color.Green;
+                    lvi.UseItemStyleForSubItems = false;
+                    lvi.SubItems[4].ForeColor = client.Value.Version == ServerVersion.Current ? Color.Green : Color.Red;
                 });
                 SyncWpfEntryFromListViewItem(lvi);
                 ApplyWpfSearchFilter();
@@ -1953,6 +1953,10 @@ namespace Pulsar.Server.Forms
                     {
                         item.ImageIndex = record.ImageIndex;
                     }
+
+                    // Set version color for offline clients
+                    item.UseItemStyleForSubItems = false;
+                    item.SubItems[4].ForeColor = (record.Version ?? string.Empty) == ServerVersion.Current ? Color.Green : Color.Red;
 
                     lstOfflineClients.Items.Add(item);
                 }

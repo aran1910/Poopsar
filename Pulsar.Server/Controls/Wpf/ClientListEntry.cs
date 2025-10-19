@@ -1,4 +1,5 @@
 using Pulsar.Server.Networking;
+using Pulsar.Server.Utilities;
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -136,9 +137,18 @@ namespace Pulsar.Server.Controls.Wpf
             ? Brushes.LimeGreen
             : Brushes.White;
 
+        public Brush VersionBrush => string.Equals(Version, ServerVersion.Current, StringComparison.OrdinalIgnoreCase)
+            ? Brushes.Green
+            : Brushes.Red;
+
         public void UpdateStatusBrush()
         {
             OnPropertyChanged(nameof(StatusBrush));
+        }
+
+        public void UpdateVersionBrush()
+        {
+            OnPropertyChanged(nameof(VersionBrush));
         }
 
         private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -150,6 +160,10 @@ namespace Pulsar.Server.Controls.Wpf
                 if (propertyName == nameof(Status))
                 {
                     UpdateStatusBrush();
+                }
+                if (propertyName == nameof(Version))
+                {
+                    UpdateVersionBrush();
                 }
             }
         }

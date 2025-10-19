@@ -224,7 +224,13 @@
                 <DataGridTextColumn Binding="{Binding Nickname}" Header="Nickname" Width="120" />
                 <DataGridTextColumn Binding="{Binding Tag}" Header="Tag" Width="80" />
                 <DataGridTextColumn Binding="{Binding UserAtPc}" Header="User@PC" Width="150" />
-                <DataGridTextColumn Binding="{Binding Version}" Header="Version" Width="100" />
+                <DataGridTemplateColumn Header="Version" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Version}" Foreground="{Binding VersionBrush}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="Status" Width="120">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
