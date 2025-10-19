@@ -195,7 +195,8 @@ namespace Pulsar.Client.User
                 "Buffer size:",
                 "Pending requests:",
                 "Value does not fall within the expected range.",
-                "Accessibility.IAccessible.get_accChild"
+                "Accessibility.IAccessible.get_accChild",
+                "0x800401D0"
             };
 
             foreach (var pattern in blacklistedPatterns)
