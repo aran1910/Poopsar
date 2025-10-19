@@ -18,7 +18,7 @@ namespace Pulsar.Server
             {
                 DiscordRPCManager.Initialize(mainForm);
 
-                var customMainForm = Pulsar.Server.Plugins.UIExtensionManager.GetCustomMainForm();
+                var customMainForm = Plugins.UIExtensionManager.GetCustomMainForm();
                 if (customMainForm != null)
                 {
                     mainForm.Hide();

